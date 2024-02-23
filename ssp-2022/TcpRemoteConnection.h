@@ -11,6 +11,9 @@
 #include <string>
 #include <vector>
 
+
+
+
 #include "spdlog/spdlog.h"
 #include "spdlog/sinks/stdout_color_sinks.h"
 
@@ -21,6 +24,8 @@ protected:
 	int targetPort;
 
 private:
+	boost::asio::ip::tcp::socket* s;
+
 	std::shared_ptr<spdlog::logger> logger;
 
 	WSAData wsaData;
@@ -39,8 +44,8 @@ public:
 
 	~TcpRemoteConnection();
 	
-	int sendTo(char message[], int messageSize);
-	int recieveFrom(char message[], int messageSize);
+	boost::asio::awaitable<unsigned long long> sendTo(char message[], int messageSize);
+	boost::asio::awaitable<unsigned long long> recieveFrom(char message[], int messageSize);
 
 	
 	int closeConnection();

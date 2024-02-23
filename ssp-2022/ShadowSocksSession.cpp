@@ -27,45 +27,63 @@ int ShadowSocksSession::startProxySession()
 	return 0;
 }
 
-int ShadowSocksSession::startProxySession(char* firstDataToRemote, const short int firstDataToRemoteLength)
+boost::asio::awaitable<void> ShadowSocksSession::startProxySession(char* firstDataToRemote, const short int firstDataToRemoteLength)
 {
-	if (this->remoteConnection != nullptr)
+	try
 	{
-		//send payload to remote server
-		remoteConnection->sendTo(firstDataToRemote, firstDataToRemoteLength);
-		std::thread clientToRemoteServerThread(&ShadowSocksSession::clientToRemoteServerHandler, this);
-		std::thread remoteServerToClientThread(&ShadowSocksSession::remoteServerToClientHandler, this);
-		this->logger->debug("ShadowSocks session started...");
-		delete firstDataToRemote;
-		clientToRemoteServerThread.join();
-		remoteServerToClientThread.join();
-		
-		return 0;
+		if (this->remoteConnection != nullptr)
+		{
+			//send payload to remote server
+			remoteConnection->sendTo(firstDataToRemote, firstDataToRemoteLength);
+
+			const auto executor = co_await boost::asio::this_coro::executor;
+			boost::asio::co_spawn(executor, clientToRemoteServerHandler(), boost::asio::detached);
+			boost::asio::co_spawn(executor, remoteServerToClientHandler(), boost::asio::detached);
+
+
+			this->logger->debug("ShadowSocks session started...");
+			delete firstDataToRemote;
+
+		}
+		else
+		{
+
+		}
 	}
-	else
+	catch (Exception e)
 	{
-		return -1;
+		this->logger->critical("Exception caught during starting proxy session...");
 	}
 }
 
 ShadowSocksSession::ShadowSocksSession(std::shared_ptr<ClientConnection> clientConnection, std::shared_ptr<RemoteConnection> remoteConnection, std::shared_ptr<CryptoProvider> cryptoProvider, std::shared_ptr<spdlog::logger> logger) : SocksFiveSession()
 {
-	this->logger = logger;
-	this->cryptoProvider = cryptoProvider;
-	this->clientConnection = clientConnection;
-	this->remoteConnection = remoteConnection;
-	char* recovered = new char[socksSessionBufferSize+100];
-	//char recovered[socksSessionBufferSize];
-	int recoveredDataLength = handleSocksProxyHandShacke(recovered, socksSessionBufferSize);
-	if (recoveredDataLength > 0)
+	try
 	{
-		startProxySession(recovered, recoveredDataLength);
+		this->logger = logger;
+		this->logger->critical("1");
+		this->cryptoProvider = cryptoProvider;
+		this->clientConnection = clientConnection;
+		this->remoteConnection = remoteConnection;
+		char* recovered = new char[socksSessionBufferSize + 100];
+		//char recovered[socksSessionBufferSize];
+		this->logger->critical("2");
+		int recoveredDataLength = handleSocksProxyHandShacke(recovered, socksSessionBufferSize).await_resume();
+		if (recoveredDataLength > 0)
+		{
+			startProxySession(recovered, recoveredDataLength);
+		}
+		else
+		{
+			delete[] recovered;
+			this->logger->warn("Unable to start ShadowSocks session...");
+		}
 	}
-	else
+	catch (Exception e)
 	{
-		delete[] recovered;
-		this->logger->warn("Unable to start ShadowSocks session...");
+		this->logger->critical("Exception caught during creating session...");
 	}
+	
 }
 
 ShadowSocksSession::~ShadowSocksSession()
@@ -74,9 +92,10 @@ ShadowSocksSession::~ShadowSocksSession()
 }
 
 
-int ShadowSocksSession::handleSocksProxyHandShacke(char* recievedData, const short int recievedDataLength)
+boost::asio::awaitable<int> ShadowSocksSession::handleSocksProxyHandShacke(char* recievedData, const short int recievedDataLength)
 {
-	int firstRecievedMessageLength = clientConnection->recieveFrom(clientToRemoteServerBuffer, socksSessionBufferSize);
+	this->logger->critical("3");
+	int firstRecievedMessageLength = co_await clientConnection->recieveFrom(clientToRemoteServerBuffer, socksSessionBufferSize);
 	this->logger->trace("Message recieved: {}", firstRecievedMessageLength);
 	if (firstRecievedMessageLength > 0)
 	{
@@ -125,12 +144,12 @@ int ShadowSocksSession::handleSocksProxyHandShacke(char* recievedData, const sho
 			{
 				if (this->remoteConnection->startConnectionToServer() == 0)
 				{
-					return recoveredPayloadLength;
+					co_return recoveredPayloadLength;
 				}
 			}
 		}
 	}
-	return -1;
+	co_return -1;
 }
 
 
@@ -141,71 +160,84 @@ int ShadowSocksSession::handleSocksProxyHandShacke(char* recievedData, const sho
 //http://rose-engine.org/press/signalis/images/header.png
 //http://rose-engine.org/press/signalis/images/SIGNALIS%20Elster%204.png
 //http://rose-engine.org/press/signalis/images/SIGNALIS%20Ariane.png
-int ShadowSocksSession::handleSocksProxyHandShacke()
+boost::asio::awaitable<int> ShadowSocksSession::handleSocksProxyHandShacke()
 {
-	return 0;
+	co_return 0;
 }
 
-int ShadowSocksSession::clientToRemoteServerHandler()
+boost::asio::awaitable<void> ShadowSocksSession::clientToRemoteServerHandler()
 {
-	char recoveredChars[socksSessionBufferSize];
-	byte* recoveredBytes = reinterpret_cast<byte*>(recoveredChars);
-	while (backToBackConectionState) 
+	try
 	{
-		int recived = clientConnection->recieveFrom(clientToRemoteServerBuffer, socksSessionBufferSize);
-		this->logger->critical("Recieve {} bytes...", recived);
-		int recoveredDataLength = cryptoProvider->decrypt(recoveredBytes, clientToRemoteServerBuffer, recived);
-		if (recived > 0 && recoveredDataLength > 0)
+		char recoveredChars[socksSessionBufferSize];
+		byte* recoveredBytes = reinterpret_cast<byte*>(recoveredChars);
+		while (backToBackConectionState)
 		{
-			if (remoteConnection->sendTo(recoveredChars, recoveredDataLength) == -1)
+			int recived = co_await clientConnection->recieveFrom(clientToRemoteServerBuffer, socksSessionBufferSize);
+			this->logger->critical("Recieve {} bytes...", recived);
+			int recoveredDataLength = cryptoProvider->decrypt(recoveredBytes, clientToRemoteServerBuffer, recived);
+			if (recived > 0 && recoveredDataLength > 0)
+			{
+				if (remoteConnection->sendTo(recoveredChars, recoveredDataLength).await_resume() == -1)
+				{
+					break;
+				}
+			}
+			else
+			{
+				if (recoveredDataLength == 0 && recived > 0)
+				{
+					this->logger->warn("Decryption error... Recieved {} bytes, but can not decrypt it...", recived);
+				}
+				break;
+			}
+		}
+		this->backToBackConectionState = false;
+		this->logger->debug("Client drop connection...");
+	}
+	catch (Exception e)
+	{
+		this->logger->critical("Exception caught in clientToRemoteServerHandler()...");
+	}	
+}
+
+boost::asio::awaitable<void> ShadowSocksSession::remoteServerToClientHandler()
+{
+
+	try
+	{
+		char encrypted[socksSessionBufferSize];
+		byte SALT[32] = { 0 };
+		char* SALTC = reinterpret_cast<char*>(SALT);
+		byte* palinTextByte = reinterpret_cast<byte*>(remoteServerToClientBuffer);
+		std::memcpy(encrypted, SALTC, 32);
+		cryptoProvider->prepareSubSessionKey(cryptoProvider->getEncryptor(), SALT);
+		int diff = 32;
+		while (backToBackConectionState)
+		{
+			int recived = co_await remoteConnection->recieveFrom(remoteServerToClientBuffer, socksSessionBufferSize);
+
+			if (recived > 0)
+			{
+				int encryptedMessageLength = cryptoProvider->encrypt(&encrypted[diff], palinTextByte, recived);
+				if (clientConnection->sendTo(encrypted, encryptedMessageLength + diff).await_resume() == -1)
+				{
+					break;
+				}
+				diff = 0;
+			}
+			else
 			{
 				break;
 			}
 		}
-		else
-		{
-			if (recoveredDataLength == 0 && recived > 0)
-			{
-				this->logger->warn("Decryption error... Recieved {} bytes, but can not decrypt it...", recived);
-			}
-			break;
-		}
+		this->backToBackConectionState = false;
+		this->logger->debug("Remote server drop connection...");
 	}
-	this->backToBackConectionState = false;
-	this->logger->debug("Client drop connection...");
-	return 0;	
-}
-
-int ShadowSocksSession::remoteServerToClientHandler()
-{
-	char encrypted[socksSessionBufferSize];
-	byte SALT[32] = { 0 };
-	char* SALTC = reinterpret_cast<char*>(SALT);
-	byte* palinTextByte = reinterpret_cast<byte*>(remoteServerToClientBuffer);
-	std::memcpy(encrypted, SALTC, 32);
-	cryptoProvider->prepareSubSessionKey(cryptoProvider->getEncryptor(), SALT);
-	int diff = 32;
-	while (backToBackConectionState)
+	catch (Exception e)
 	{
-		int recived = remoteConnection->recieveFrom(remoteServerToClientBuffer, socksSessionBufferSize);
-
-		if (recived > 0)
-		{
-			int encryptedMessageLength = cryptoProvider->encrypt(&encrypted[diff], palinTextByte, recived);
-			if (clientConnection->sendTo(encrypted, encryptedMessageLength + diff) == -1)
-			{
-				break;
-			}
-			diff = 0;
-		}
-		else
-		{
-			break;
-		}
+		this->logger->critical("Exception caught in remoteServerToClientHandler()...");
 	}
-	this->backToBackConectionState = false;
-	this->logger->debug("Remote server drop connection...");
-	return 0;
 }
 
 

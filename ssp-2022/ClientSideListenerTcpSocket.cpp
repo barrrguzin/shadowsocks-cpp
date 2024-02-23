@@ -1,5 +1,6 @@
 #include "ClientSideListenerTcpSocket.h"
 
+
 unsigned char* ClientSideListenerTcpSocket::stringToUnsignedCharArray(std::string str)
 {
 	const char* signedChars = str.c_str();
@@ -16,12 +17,12 @@ ClientSideListenerTcpSocket::ClientSideListenerTcpSocket(char* listeningAddress,
 	if (cryptoProvider == nullptr)
 	{
 		this->logger->info("Starting listening on {}:{} in Socks5 mode...", this->listeningAddress, this->listeningPort);
-		this->clientHandler = &ClientSideListenerTcpSocket::socksFiveClientHandler;
+		//this->clientHandler = &ClientSideListenerTcpSocket::socksFiveClientHandler;
 	}
 	else
 	{
 		this->logger->info("Starting listening on {}:{} in ShadowSocks mode...", this->listeningAddress, this->listeningPort);
-		this->clientHandler = &ClientSideListenerTcpSocket::shadowSocksClientHandler;
+		//this->clientHandler = &ClientSideListenerTcpSocket::shadowSocksClientHandler;
 	}
 }
 
@@ -38,107 +39,102 @@ ClientSideListenerTcpSocket::~ClientSideListenerTcpSocket()
 	// 2 - [encrypted payload][payload tag] = [n][16]
 //}
 
-void ClientSideListenerTcpSocket::socksFiveClientHandler(std::shared_ptr<SOCKET> clientConnectionFromSocket)
+/*
+boost::asio::awaitable<void> ClientSideListenerTcpSocket::socksFiveClientHandler(boost::asio::ip::tcp::socket clientConnectionFromSocket)
 {
 	//std::shared_ptr<RemoteConnection> remoteConnection = std::make_shared<TcpRemoteConnection>(new TcpRemoteConnection(this->logger));
 	//std::shared_ptr<ClientConnection> clientConnection = std::make_shared<TcpClientConnection>(new TcpClientConnection(clientConnectionFromSocket, this->logger));
 
 	//SocksFiveSession* session = new SocksFiveSession(clientConnection, remoteConnection, this->logger);
 	//session->startProxySession();
-
+	co_await std::cout;
+	return;
 }
+*/
 
-void ClientSideListenerTcpSocket::shadowSocksClientHandler(std::shared_ptr<SOCKET> clientConnectionFromSocket)
+boost::asio::awaitable<void> ClientSideListenerTcpSocket::shadowSocksClientHandler(boost::asio::ip::tcp::socket* clientConnectionFromSocket)
 {
-	std::shared_ptr<RemoteConnection> remoteConnection(new TcpRemoteConnection(this->logger));
-	std::shared_ptr<ClientConnection> clientConnection(new TcpClientConnection(clientConnectionFromSocket, this->logger));
-
-
-	std::string keyStr = "1111";
-
-	char* key = new char[keyStr.length() + 1];
-	strcpy(key, keyStr.c_str());
-	byte* keyB = reinterpret_cast<byte*>(key);
-
-	std::shared_ptr<CryptoProvider> localCP(new ShadowSocksChaCha20Poly1305(keyB, keyStr.length(), this->logger));
-
 	try
 	{
-		std::shared_ptr<SocksFiveSession> session(new ShadowSocksSession(clientConnection, remoteConnection, localCP, this->logger));
+		this->logger->info("shadowSocksClientHandler");
+		
+		std::shared_ptr<RemoteConnection> remoteConnection(new TcpRemoteConnection(this->logger));
+		std::shared_ptr<ClientConnection> clientConnection(new TcpClientConnection(clientConnectionFromSocket, this->logger));
+		try
+		{
+			std::string keyStr = "1111";
+
+			char* key = new char[keyStr.length() + 1];
+			strcpy(key, keyStr.c_str());
+			byte* keyB = reinterpret_cast<byte*>(key);
+
+			std::shared_ptr<CryptoProvider> localCP(new ShadowSocksChaCha20Poly1305(keyB, keyStr.length(), this->logger));
+			try
+			{
+				this->logger->critical("Exception caught during session... 0");
+
+				if (this->logger != NULL)
+				{
+					std::cout << 1 << std::endl;
+				}
+				else
+				{
+					std::cout << 0 << std::endl;
+				}
+
+				std::shared_ptr<SocksFiveSession> session(new ShadowSocksSession(clientConnection, remoteConnection, localCP, this->logger));
+			}
+			catch (Exception e)
+			{
+				this->logger->critical("Exception caught during session... 1");
+			}
+
+		}
+		catch (Exception e)
+		{
+			this->logger->critical("Exception caught during session... 2");
+		}
+
 	}
-	catch (std::exception e)
+	catch (Exception e)
 	{
-		this->logger->critical("Exception caught...");
+		this->logger->critical("Exception caught during session... 3");
 	}
 	
-
-
-	
-	//session->startProxySession();
 }
 
 int ClientSideListenerTcpSocket::startListener()
 {
-	if (WSAStartup(DLLVersion, &wsaData) != 0)
-	{
-		this->logger->critical("WSA initialization error...");
-		exit(1);
-	}
-	addr.sin_addr.s_addr = inet_addr(listeningAddress);
-	addr.sin_port = htons(listeningPort);
-	addr.sin_family = AF_INET;
-	sListener = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-	sizeofaddr = sizeof(addr);
-	if (sListener == SOCKET_ERROR)
-	{
-		this->logger->critical("Socket initialization error...");
-		exit(1);
-	}
-	if (bind(sListener, (SOCKADDR*)&addr, sizeofaddr) == SOCKET_ERROR)
-	{
-		this->logger->critical("Binding socket error...");
-		exit(1);
-	}
-	//int mss = 512;
-	//setsockopt(sListener, IPPROTO_TCP, TCP_MAXSEG, (char*)&mss, sizeof(mss));
-	if (listen(sListener, SOMAXCONN) == SOCKET_ERROR)
-	{
-		this->logger->critical("Listening start error...");
-		exit(1);
-	}
-	this->logger->info("Listening started on {}:{}", this->listeningAddress, this->listeningPort);
-	handleConnections();
+	this->logger->info("startListener");
+	boost::asio::io_context ioContext;
+    boost::asio::co_spawn(ioContext, handleConnections(), boost::asio::detached);
+	//boost::asio::co_spawn(ioContext, handleConnections(), boost::asio::use_awaitable);
+	ioContext.run();
+	this->logger->info("startListener-end");
 }
 
 
-void ClientSideListenerTcpSocket::handleConnections()
+boost::asio::awaitable<void> ClientSideListenerTcpSocket::handleConnections()
 {
-	while (true)
+	try
 	{
-		//SOCKET* acceptedConnection = new SOCKET;
-		std::shared_ptr<SOCKET> acceptedConnection(new SOCKET());
-		SOCKADDR_IN addr_c;
-		int addrlen = sizeof(addr_c);
-
-		if ((*acceptedConnection = accept(sListener, (struct sockaddr*)&addr_c, &addrlen)) != 0) {
-			this->logger->info("Client connected from {}.{}.{}.{}:{}", 
-				(unsigned char)addr_c.sin_addr.S_un.S_un_b.s_b1,
-				(unsigned char)addr_c.sin_addr.S_un.S_un_b.s_b2,
-				(unsigned char)addr_c.sin_addr.S_un.S_un_b.s_b3,
-				(unsigned char)addr_c.sin_addr.S_un.S_un_b.s_b4,
-				ntohs(addr_c.sin_port));
-
-
-			std::thread clientHandlerThread(ClientSideListenerTcpSocket::clientHandler, this, acceptedConnection);
-			//std::async(std::launch::async, ClientSideListenerTcpSocket::clientHandler, this, acceptedConnection);
-			clientHandlerThread.detach();
-			//Sleep(10);
-		}
-		else
+		this->logger->info("handleConnections");
+		const auto executor = co_await boost::asio::this_coro::executor;
+		this->logger->info("handleConnections-1");
+		boost::asio::ip::tcp::acceptor acceptor(executor, { boost::asio::ip::tcp::v4(), 2222 });
+		this->logger->info("handleConnections-2");
+		while (true)
 		{
-			this->logger->info("Connection failed");
+			this->logger->info("handleConnections-while");
+			//boost::asio::ip::tcp::socket acceptedConnection = new boost::asio::ip::tcp::socket;
+			boost::asio::ip::tcp::socket acceptedConnection = co_await acceptor.async_accept(boost::asio::use_awaitable);
+			boost::asio::co_spawn(executor, shadowSocksClientHandler(&acceptedConnection), boost::asio::detached);
 		}
-		//Sleep(10);
+		this->logger->info("handleConnections-after-while");
+	}
+	catch (Exception e)
+	{
+		this->logger->critical("Exception while handling connection...");
 	}
 }
 
@@ -149,8 +145,8 @@ void ClientSideListenerTcpSocket::handleConnections()
 
 int ClientSideListenerTcpSocket::closeListener()
 {
-	closesocket(sListener);
-	WSACleanup();
+	//closesocket(sListener);
+	//WSACleanup();
 	this->logger->info("Listener on {}:{} closed...", this->listeningAddress, this->listeningPort);
 	return 0;
 }

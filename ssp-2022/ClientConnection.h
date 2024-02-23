@@ -14,17 +14,17 @@ public:
 	{
 		return *clientConnection;
 	}
-
+	/*
 	ClientConnection(std::shared_ptr<SOCKET> clientConnection)
 	{
 		this->clientConnection = clientConnection;
 	}
-
+	*/
 	ClientConnection() {}
 
 	~ClientConnection()
 	{
-		closesocket(*clientConnection);
+		//closesocket(*clientConnection);
 	}
 };
 

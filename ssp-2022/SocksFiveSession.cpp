@@ -8,7 +8,7 @@ SocksFiveSession::SocksFiveSession(std::shared_ptr<ClientConnection> clientConne
 	this->clientConnection = clientConnection;
 	this->remoteConnection = serverSideSocket;
 
-	if (handleSocksProxyHandShacke() == 0)
+	if (handleSocksProxyHandShacke().await_resume() == 0)
 	{
 		const char* addressBytes = ((this->address)).c_str();
 		if (this->remoteConnection->initializeServerSideSocket(addressBytes, port) == 0)
@@ -38,14 +38,14 @@ SocksFiveSession::~SocksFiveSession()
 	}
 }
 
-int SocksFiveSession::handleSocksProxyHandShacke()
+boost::asio::awaitable<int> SocksFiveSession::handleSocksProxyHandShacke()
 {
-	int recived = clientConnection->recieveFrom(initialPackage, sizeOfInitialPackage);
+	int recived = co_await clientConnection->recieveFrom(initialPackage, sizeOfInitialPackage);
 	if (recived == sizeOfInitialPackage)
 	{
 		clientConnection->sendTo((char*) initialPackageAnswer, sizeOfInitialPackageAnswer);
 		char remoteHostAddressBuffer[310];
-		int recived = clientConnection->recieveFrom(remoteHostAddressBuffer, sizeof(remoteHostAddressBuffer));
+		int recived = co_await clientConnection->recieveFrom(remoteHostAddressBuffer, sizeof(remoteHostAddressBuffer));
 		if (recived > 0)
 		{
 			char* address = &remoteHostAddressBuffer[5];
@@ -57,18 +57,18 @@ int SocksFiveSession::handleSocksProxyHandShacke()
 			revPort[1] = port[0];
 			std::memcpy(&(this->port), revPort, 2);
 			clientConnection->sendTo((char*) handShakeDoneResponse, handShakeDoneResponseSize);
-			return 0;
+			co_return 0;
 		}
 		else
 		{
 			this->logger->debug("Unable to get destination address from client...");
-			return -1;
+			co_return -1;
 		}
 	}
 	else
 	{
 		this->logger->debug("Unable to handle hello message...");
-		return -1;
+		co_return -1;
 	}
 }
 
@@ -76,11 +76,11 @@ int SocksFiveSession::startProxySession()
 {
 	if (this->remoteConnection != nullptr)
 	{
-		std::thread remoteServerToClientThread(&SocksFiveSession::remoteServerToClientHandler, this);
-		std::thread clientToRemoteServerThread(&SocksFiveSession::clientToRemoteServerHandler, this);
+		//std::thread remoteServerToClientThread(&SocksFiveSession::remoteServerToClientHandler, this);
+		//std::thread clientToRemoteServerThread(&SocksFiveSession::clientToRemoteServerHandler, this);
 
-		remoteServerToClientThread.join();
-		clientToRemoteServerThread.join();
+		//remoteServerToClientThread.join();
+		//clientToRemoteServerThread.join();
 		return 0;
 	}
 	else
@@ -88,8 +88,8 @@ int SocksFiveSession::startProxySession()
 		return 1;
 	}
 }
-
-int SocksFiveSession::clientToRemoteServerHandler()
+/*
+boost::asio::awaitable<void> SocksFiveSession::clientToRemoteServerHandler()
 {
 	while (backToBackConectionState) {
 		
@@ -105,10 +105,10 @@ int SocksFiveSession::clientToRemoteServerHandler()
 		//Sleep(1);
 	}
 	this->logger->debug("Client drop connection... Exit");
-	return 0;
+	return;
 }
 
-int SocksFiveSession::remoteServerToClientHandler()
+boost::asio::awaitable<void> SocksFiveSession::remoteServerToClientHandler()
 {
 	while (backToBackConectionState) 
 	{
@@ -124,5 +124,6 @@ int SocksFiveSession::remoteServerToClientHandler()
 		//Sleep(5);
 	}
 	this->logger->debug("Server drop connection... Exit");
-	return 0;
+	return;
 }
+*/

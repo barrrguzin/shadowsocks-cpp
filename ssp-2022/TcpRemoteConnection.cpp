@@ -1,5 +1,7 @@
 #include "TcpRemoteConnection.h"
 
+
+
 TcpRemoteConnection::TcpRemoteConnection(std::shared_ptr<spdlog::logger> logger) 
 {
 	this->logger = logger;
@@ -7,6 +9,7 @@ TcpRemoteConnection::TcpRemoteConnection(std::shared_ptr<spdlog::logger> logger)
 
 TcpRemoteConnection::~TcpRemoteConnection()
 {
+	delete s;
 	closeConnection();
 }
 
@@ -14,42 +17,37 @@ int TcpRemoteConnection::initializeServerSideSocket(const char* targetAddress, i
 {
 	TcpRemoteConnection::targetAddress = targetAddress;
 	TcpRemoteConnection::targetPort = targetPort;
-	if (WSAStartup(DLLVersion, &wsaData) != 0)
-	{
-		this->logger->error("WSA initialization error...");
-		return -1;
-	}
-	
-	hints.ai_family = AF_UNSPEC;
-	hints.ai_socktype = SOCK_STREAM;
-	hints.ai_protocol = IPPROTO_TCP;
-	std::string s = std::to_string(targetPort);
-	char const* pchar = s.c_str();
-	return getaddrinfo(targetAddress, pchar, &hints, &addrs);
+
+	boost::asio::io_service io_service;
+
+	boost::asio::ip::tcp::resolver resolver(io_service);
+	boost::asio::ip::tcp::resolver::query query(boost::asio::ip::tcp::v4(), targetAddress, std::to_string(targetPort));
+	boost::asio::ip::tcp::resolver::iterator endpoints = resolver.resolve(query);
+	boost::asio::ip::tcp::endpoint endpoint = endpoints->endpoint();
+
+	boost::asio::ip::tcp::socket socket(io_service);
+	socket.connect(endpoint);
+
+	this->s = &socket;
+
+	return 0;
 }
 
 int TcpRemoteConnection::startConnectionToServer()
 {
-	connection = socket(addrs->ai_family, addrs->ai_socktype, addrs->ai_protocol);
-	if (connect(connection, addrs->ai_addr, addrs->ai_addrlen) != 0)
-	{
-		this->logger->error("Server side connection error...");
-		return -1;
-	}
-	this->logger->debug("Connection to remote server started: {}:{}", this->targetAddress, this->targetPort);
 	return 0;
 }
 
-int TcpRemoteConnection::sendTo(char message[], int messageSize)
+boost::asio::awaitable<unsigned long long> TcpRemoteConnection::sendTo(char message[], int messageSize)
 {
-	//Sleep(50);
-	return send(connection, message, messageSize, NULL);
+	return boost::asio::async_write(*s, boost::asio::buffer(message, messageSize), boost::asio::use_awaitable);
+	//return boost::asio::write(*s, boost::asio::buffer(message, messageSize));
 }
 
-int TcpRemoteConnection::recieveFrom(char message[], int messageSize)
+boost::asio::awaitable<unsigned long long> TcpRemoteConnection::recieveFrom(char message[], int messageSize)
 {
-	//Sleep(50);
-	return recv(connection, message, messageSize, NULL);
+	return boost::asio::async_read(*s, boost::asio::buffer(message, messageSize), boost::asio::use_awaitable);
+	//return boost::asio::read(*s, boost::asio::buffer(message, messageSize));
 }
 
 int TcpRemoteConnection::closeConnection()

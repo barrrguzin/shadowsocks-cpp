@@ -4,6 +4,13 @@
 #include "ClientConnection.h"
 #include "ProxySession.h"
 
+#include <boost/asio/io_context.hpp>
+#include <boost/asio/execution/executor.hpp>
+#include <boost/asio/this_coro.hpp>
+#include <boost/asio/co_spawn.hpp>
+#include <boost/asio/detached.hpp>
+#include <boost/asio/ip/tcp.hpp>
+
 #include "spdlog/spdlog.h"
 
 class SocksFiveSession : public ProxySession
@@ -31,10 +38,11 @@ protected:
 	
 	std::shared_ptr<ClientConnection> clientConnection;
 	std::shared_ptr<RemoteConnection> remoteConnection;
-	virtual int handleSocksProxyHandShacke();
-	virtual int clientToRemoteServerHandler();
-	virtual int remoteServerToClientHandler();
-
+	virtual boost::asio::awaitable<int> handleSocksProxyHandShacke();
+	/*
+	virtual boost::asio::awaitable<void> clientToRemoteServerHandler();
+	virtual boost::asio::awaitable<void> remoteServerToClientHandler();
+	*/
 public:
 	int startProxySession();
 	SocksFiveSession(std::shared_ptr<ClientConnection> clientConnection, std::shared_ptr<RemoteConnection> serverSideSocket, std::shared_ptr<spdlog::logger> logger);

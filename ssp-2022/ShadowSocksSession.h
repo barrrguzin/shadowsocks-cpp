@@ -5,6 +5,13 @@
 #include "RemoteConnection.h"
 #include "ClientConnection.h"
 
+#include <boost/asio/io_context.hpp>
+#include <boost/asio/execution/executor.hpp>
+#include <boost/asio/this_coro.hpp>
+#include <boost/asio/co_spawn.hpp>
+#include <boost/asio/detached.hpp>
+#include <boost/asio/ip/tcp.hpp>
+
 #include "spdlog/spdlog.h"
 #include "spdlog/sinks/stdout_color_sinks.h"
 #include "spdlog/fmt/bin_to_hex.h"
@@ -26,10 +33,10 @@ private:
 	std::shared_ptr<spdlog::logger> logger;
 	std::mutex _mutex;
 
-	int handleSocksProxyHandShacke();
-	int handleSocksProxyHandShacke(char* recievedData, const short int recievedDataLength);
-	int clientToRemoteServerHandler();
-	int remoteServerToClientHandler();
+	boost::asio::awaitable<int> handleSocksProxyHandShacke();
+	boost::asio::awaitable<int> handleSocksProxyHandShacke(char* recievedData, const short int recievedDataLength);
+	boost::asio::awaitable<void> clientToRemoteServerHandler();
+	boost::asio::awaitable<void> remoteServerToClientHandler();
 
 	std::shared_ptr<CryptoProvider> cryptoProvider;
 
@@ -39,7 +46,7 @@ private:
 		unsigned char* iv, unsigned int vsize);
 
 public:
-	int startProxySession(char* firstDataToRemote, const short int firstDataToRemoteLength);
+	boost::asio::awaitable<void> startProxySession(char* firstDataToRemote, const short int firstDataToRemoteLength);
 	int startProxySession();
 	
 	ShadowSocksSession(std::shared_ptr<ClientConnection> clientConnection, std::shared_ptr<RemoteConnection> serverSideSocket, std::shared_ptr<CryptoProvider> cryptoProvider, std::shared_ptr<spdlog::logger> logger);

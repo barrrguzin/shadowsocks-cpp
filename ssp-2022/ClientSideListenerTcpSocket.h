@@ -18,6 +18,13 @@
 #include <string>
 #include <vector>
 
+#include <boost/asio/io_context.hpp>
+#include <boost/asio/execution/executor.hpp>
+#include <boost/asio/this_coro.hpp>
+#include <boost/asio/co_spawn.hpp>
+#include <boost/asio/detached.hpp>
+#include <boost/asio/ip/tcp.hpp>
+
 #include "spdlog/spdlog.h"
 
 
@@ -30,12 +37,12 @@ protected:
 private:
 	std::shared_ptr<spdlog::logger> logger;
 
-	void (ClientSideListenerTcpSocket::*clientHandler)(std::shared_ptr<SOCKET>);
+	boost::asio::awaitable<void>(ClientSideListenerTcpSocket::*clientHandler)(boost::asio::ip::tcp::socket acceptedConnection);
 
-	void socksFiveClientHandler(std::shared_ptr<SOCKET> acceptedConnection);
-	void shadowSocksClientHandler(std::shared_ptr<SOCKET> acceptedConnection);
+	//boost::asio::awaitable<void> socksFiveClientHandler(boost::asio::ip::tcp::socket acceptedConnection);
+	boost::asio::awaitable<void> shadowSocksClientHandler(boost::asio::ip::tcp::socket* acceptedConnection);
 
-	void handleConnections();
+	boost::asio::awaitable<void> handleConnections();
 
 	WSAData wsaData;
 	WORD DLLVersion = MAKEWORD(2, 1);
